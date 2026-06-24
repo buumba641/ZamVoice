@@ -50,9 +50,11 @@ else()
 endif()
 target_compile_definitions(whisper_bridge PRIVATE WHISPER_VERSION="${_WHISPER_VER}")
 
-# ARM v8.2 fp16 intrinsics for faster inference on modern devices.
+# Target baseline ARMv8-a to support older devices (e.g. Cortex-A53).
+# ggml will detect NEON at runtime; avoid armv8.2-a+fp16 which causes
+# SIGILL on chips that lack those extensions.
 if(ANDROID_ABI STREQUAL "arm64-v8a")
-    target_compile_options(whisper_bridge PRIVATE -march=armv8.2-a+fp16)
+    target_compile_options(whisper_bridge PRIVATE -march=armv8-a)
 endif()
 
 # ---------- Release optimisations ----------
@@ -75,7 +77,13 @@ endif()
 FetchContent_Declare(ggml SOURCE_DIR ${WHISPER_SRC_DIR}/ggml)
 FetchContent_MakeAvailable(ggml)
 if(ANDROID_ABI STREQUAL "arm64-v8a")
-    target_compile_options(ggml PRIVATE -march=armv8.2-a+fp16)
+    # Override march on all ggml targets to avoid fp16/dotprod instructions
+    # that crash on older ARMv8.0 devices (Cortex-A53, Snapdragon 4xx).
+    foreach(_tgt ggml ggml-base ggml-cpu)
+        if(TARGET ${_tgt})
+            target_compile_options(${_tgt} PRIVATE -march=armv8-a)
+        endif()
+    endforeach()
 endif()
 
 target_link_libraries(whisper_bridge ${LOG_LIB} android ggml)
